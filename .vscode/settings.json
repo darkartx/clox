@@ -1,0 +1,8 @@
+{
+  "cmake.debugConfig": {
+    "externalConsole": true
+  },
+  "files.associations": {
+    "memory.h": "c"
+  }
+}
