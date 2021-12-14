@@ -4,6 +4,7 @@ add_executable(Clox
     memory.c
     debug.c
     value.c
+    vm.c
 )
 
 target_include_directories(Clox

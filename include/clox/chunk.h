@@ -6,6 +6,11 @@
 
 typedef enum {
     CLOX_OP_RETURN,
+    CLOX_OP_ADD,
+    CLOX_OP_SUBTRACT,
+    CLOX_OP_MULTIPLY,
+    CLOX_OP_DEVIDE,
+    CLOX_OP_NEGATE,
     CLOX_OP_CONSTANT,
 } clox_op_code;
 

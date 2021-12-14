@@ -29,6 +29,16 @@ int clox_disassemble_instruction(clox_chunk *chunk, int offset)
         return simple_instruction("opReturn", offset);
     case CLOX_OP_CONSTANT:
         return constant_instruction("opConstant", chunk, offset);
+    case CLOX_OP_ADD:
+        return simple_instruction("opAdd", offset);
+    case CLOX_OP_SUBTRACT:
+        return simple_instruction("opSubtract", offset);
+    case CLOX_OP_MULTIPLY:
+        return simple_instruction("opMultiply", offset);
+    case CLOX_OP_DEVIDE:
+        return simple_instruction("opDevide", offset);
+    case CLOX_OP_NEGATE:
+        return simple_instruction("opNegate", offset);
     default:
         printf("Unknown opcode %d\n", instruction);
         return offset + 1;
