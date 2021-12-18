@@ -3,6 +3,7 @@
 #include "clox/common.h"
 #include "clox/vm.h"
 #include "clox/debug.h"
+#include "clox/compiler.h"
 
 clox_vm vm;
 
@@ -18,11 +19,13 @@ void clox_free_vm()
 {
 }
 
-clox_interpret_result clox_interpret(clox_chunk *chunk)
+clox_interpret_result clox_interpret(const char *source)
 {
-    vm.chunk = chunk;
-    vm.ip = vm.chunk->code;
-    return run();
+    clox_compile(source);
+    return CLOX_INTERPRET_OK;
+    // vm.chunk = chunk;
+    // vm.ip = vm.chunk->code;
+    // return run();
 }
 
 void clox_stack_push(clox_value value)

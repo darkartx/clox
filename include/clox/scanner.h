@@ -1,0 +1,57 @@
+#ifndef __CLOX_SCANNER_H__
+#define __CLOX_SCANNER_H__
+
+typedef enum {
+    CLOX_TOKEN_LEFT_PAREN,
+    CLOX_TOKEN_RIGHT_PAREN,
+    CLOX_TOKEN_LEFT_BRACE,
+    CLOX_TOKEN_RIGHT_BRACE,
+    CLOX_TOKEN_COMMA,
+    CLOX_TOKEN_DOT,
+    CLOX_TOKEN_MINUS,
+    CLOX_TOKEN_PLUS,
+    CLOX_TOKEN_SEMICOLON,
+    CLOX_TOKEN_SLASH,
+    CLOX_TOKEN_STAR,
+    CLOX_TOKEN_BANG,
+    CLOX_TOKEN_BANG_EQUAL,
+    CLOX_TOKEN_EQUAL,
+    CLOX_TOKEN_EQUAL_EQUAL,
+    CLOX_TOKEN_GREATER,
+    CLOX_TOKEN_GREATER_EQUAL,
+    CLOX_TOKEN_LESS,
+    CLOX_TOKEN_LESS_EQUAL,
+    CLOX_TOKEN_IDENTIFIER,
+    CLOX_TOKEN_STRING,
+    CLOX_TOKEN_NUMBER,
+    CLOX_TOKEN_AND,
+    CLOX_TOKEN_CLASS,
+    CLOX_TOKEN_ELSE,
+    CLOX_TOKEN_FALSE,
+    CLOX_TOKEN_FOR,
+    CLOX_TOKEN_FUN,
+    CLOX_TOKEN_IF,
+    CLOX_TOKEN_NIL,
+    CLOX_TOKEN_OR,
+    CLOX_TOKEN_PRINT,
+    CLOX_TOKEN_RETURN,
+    CLOX_TOKEN_SUPER,
+    CLOX_TOKEN_THIS,
+    CLOX_TOKEN_TRUE,
+    CLOX_TOKEN_VAR,
+    CLOX_TOKEN_WHILE,
+    CLOX_TOKEN_ERROR,
+    CLOX_TOKEN_EOF
+} clox_token_type;
+
+typedef struct {
+    clox_token_type type;
+    const char *start;
+    int length;
+    int line;
+} clox_token;
+
+void clox_init_scanner(const char *source);
+clox_token clox_scan_token();
+
+#endif // __CLOX_SCANNER_H__

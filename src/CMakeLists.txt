@@ -1,8 +1,10 @@
 add_executable(Clox
     main.c
     chunk.c
+    compiler.c
     memory.c
     debug.c
+    scanner.c
     value.c
     vm.c
 )

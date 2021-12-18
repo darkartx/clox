@@ -21,7 +21,7 @@ typedef enum {
 
 void clox_init_vm();
 void clox_free_vm();
-clox_interpret_result clox_interpret(clox_chunk *chunk);
+clox_interpret_result clox_interpret(const char *source);
 void clox_stack_push(clox_value value);
 clox_value clox_stack_pop();
 
