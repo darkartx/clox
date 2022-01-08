@@ -21,11 +21,21 @@ void clox_free_vm()
 
 clox_interpret_result clox_interpret(const char *source)
 {
-    clox_compile(source);
-    return CLOX_INTERPRET_OK;
-    // vm.chunk = chunk;
-    // vm.ip = vm.chunk->code;
-    // return run();
+    clox_chunk chunk;
+    clox_init_chunk(&chunk);
+
+    if (!clox_compile(source, &chunk)) {
+        clox_free_chunk(&chunk);
+        return CLOX_INTERPRET_COMPILE_ERROR;
+    }
+
+    vm.chunk = &chunk;
+    vm.ip = vm.chunk->code;
+
+    clox_interpret_result result = run();
+
+    clox_free_chunk(&chunk);
+    return result;
 }
 
 void clox_stack_push(clox_value value)

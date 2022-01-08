@@ -7,6 +7,7 @@
 
 #include "CloxExport.h"
 
+#define CLOX_DEBUG_PRINT_CODE
 #define CLOX_DEBUG_TRACE_EXECUTION
 
 #endif // __CLOX_COMMON_H__
