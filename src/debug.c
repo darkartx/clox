@@ -39,6 +39,20 @@ int clox_disassemble_instruction(clox_chunk *chunk, int offset)
         return simple_instruction("opDevide", offset);
     case CLOX_OP_NEGATE:
         return simple_instruction("opNegate", offset);
+    case CLOX_OP_NIL:
+        return simple_instruction("opNil", offset);
+    case CLOX_OP_TRUE:
+        return simple_instruction("opTrue", offset);
+    case CLOX_OP_FALSE:
+        return simple_instruction("opFalse", offset);
+    case CLOX_OP_NOT:
+        return simple_instruction("opNot", offset);
+    case CLOX_OP_EQUAL:
+        return simple_instruction("opEqual", offset);
+    case CLOX_OP_GREATER:
+        return simple_instruction("opGreater", offset);
+    case CLOX_OP_LESS:
+        return simple_instruction("opLess", offset);
     default:
         printf("Unknown opcode %d\n", instruction);
         return offset + 1;

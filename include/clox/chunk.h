@@ -12,6 +12,13 @@ typedef enum {
     CLOX_OP_DEVIDE,
     CLOX_OP_NEGATE,
     CLOX_OP_CONSTANT,
+    CLOX_OP_NIL,
+    CLOX_OP_TRUE,
+    CLOX_OP_FALSE,
+    CLOX_OP_NOT,
+    CLOX_OP_EQUAL,
+    CLOX_OP_GREATER,
+    CLOX_OP_LESS,
 } clox_op_code;
 
 typedef struct {

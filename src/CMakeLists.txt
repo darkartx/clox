@@ -4,6 +4,7 @@ add_executable(Clox
     compiler.c
     memory.c
     debug.c
+    object.c
     scanner.c
     value.c
     vm.c
