@@ -4,6 +4,7 @@
 #include "chunk.h"
 #include "value.h"
 #include "object.h"
+#include "table.h"
 
 #define CLOX_STACK_MAX 256
 
@@ -12,6 +13,7 @@ typedef struct {
     uint8_t* ip;
     clox_value stack[CLOX_STACK_MAX];
     clox_value* stack_top;
+    clox_table strings;
     clox_obj* objects;
 } clox_vm;
 

@@ -8,6 +8,7 @@ add_executable(Clox
     scanner.c
     value.c
     vm.c
+    table.c
 )
 
 target_include_directories(Clox

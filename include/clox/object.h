@@ -17,6 +17,7 @@ struct clox_obj_string {
     clox_obj obj;
     int length;
     char* chars;
+    uint32_t hash;
 };
 
 static inline bool clox_is_obj_type(clox_value value, clox_obj_type type)

@@ -22,10 +22,13 @@ void clox_init_vm()
 {
     reset_stack();
     clox_vm_instance.objects = NULL;
+
+    clox_init_table(&clox_vm_instance.strings);
 }
 
 void clox_free_vm()
 {
+    clox_free_table(&clox_vm_instance.strings);
     free_objects();
 }
 

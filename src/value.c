@@ -53,12 +53,7 @@ bool clox_value_equal(clox_value a, clox_value b)
         case CLOX_VAL_BOOL: return CLOX_AS_BOOL(a) == CLOX_AS_BOOL(b);
         case CLOX_VAL_NIL: return true;
         case CLOX_VAL_NUMBER: return CLOX_AS_NUMBER(a) == CLOX_AS_NUMBER(b);
-        case CLOX_VAL_OBJ: {
-            clox_obj_string *a_string = CLOX_AS_STRING(a);
-            clox_obj_string *b_string = CLOX_AS_STRING(b);
-            return a_string->length == b_string->length &&
-                memcmp(a_string->chars, b_string->chars, a_string->length) == 0;
-        }
+        case CLOX_VAL_OBJ: return CLOX_AS_OBJ(a) == CLOX_AS_OBJ(b);
         default: return false;
     }
 }
