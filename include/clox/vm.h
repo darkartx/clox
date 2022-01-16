@@ -14,6 +14,7 @@ typedef struct {
     clox_value stack[CLOX_STACK_MAX];
     clox_value* stack_top;
     clox_table strings;
+    clox_table globals;
     clox_obj* objects;
 } clox_vm;
 

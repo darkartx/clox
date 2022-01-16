@@ -19,6 +19,13 @@ typedef enum {
     CLOX_OP_EQUAL,
     CLOX_OP_GREATER,
     CLOX_OP_LESS,
+    CLOX_OP_PRINT,
+    CLOX_OP_POP,
+    CLOX_OP_DEFINE_GLOBAL,
+    CLOX_OP_GET_GLOBAL,
+    CLOX_OP_SET_GLOBAL,
+    CLOX_OP_GET_LOCAL,
+    CLOX_OP_SET_LOCAL
 } clox_op_code;
 
 typedef struct {

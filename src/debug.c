@@ -4,6 +4,10 @@
 #include "clox/debug.h"
 #include "clox/value.h"
 
+static int simple_instruction(const char* name, int offset);
+static int constant_instruction(const char* name, clox_chunk* chunk, int offset);
+static int byte_instruction(const char* name, clox_chunk* chunk, int offset);
+
 void clox_disassemble_chunk(clox_chunk *chunk, const char *name)
 {
     printf("== %s ==\n", name);
@@ -53,6 +57,20 @@ int clox_disassemble_instruction(clox_chunk *chunk, int offset)
         return simple_instruction("opGreater", offset);
     case CLOX_OP_LESS:
         return simple_instruction("opLess", offset);
+    case CLOX_OP_PRINT:
+        return simple_instruction("opPrint", offset);
+    case CLOX_OP_POP:
+        return simple_instruction("opPop", offset);
+    case CLOX_OP_DEFINE_GLOBAL:
+        return constant_instruction("opDefineGlobal", chunk, offset);
+    case CLOX_OP_GET_GLOBAL:
+        return constant_instruction("opGetGlobal", chunk, offset);
+    case CLOX_OP_SET_GLOBAL:
+        return constant_instruction("opSetGlobal", chunk, offset);
+    case CLOX_OP_GET_LOCAL:
+        return byte_instruction("opGetLocal", chunk, offset);
+    case CLOX_OP_SET_LOCAL:
+        return byte_instruction("opSetLocal", chunk, offset);
     default:
         printf("Unknown opcode %d\n", instruction);
         return offset + 1;
@@ -71,6 +89,13 @@ static int constant_instruction(const char *name, clox_chunk *chunk, int offset)
     printf("%-16s %04d '", name, constant);
     clox_print_value(chunk->constants.values[constant]);
     printf("'\n");
+    return offset + 2;
+}
+
+static int byte_instruction(const char* name, clox_chunk* chunk, int offset)
+{
+    uint8_t slot = chunk->code[offset + 1];
+    printf("%-16s %4d\n", name, slot);
     return offset + 2;
 }
 

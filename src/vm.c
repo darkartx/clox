@@ -24,10 +24,12 @@ void clox_init_vm()
     clox_vm_instance.objects = NULL;
 
     clox_init_table(&clox_vm_instance.strings);
+    clox_init_table(&clox_vm_instance.globals);
 }
 
 void clox_free_vm()
 {
+    clox_free_table(&clox_vm_instance.globals);
     clox_free_table(&clox_vm_instance.strings);
     free_objects();
 }
@@ -72,6 +74,7 @@ static clox_interpret_result run()
 {
 #define READ_BYTE() (*clox_vm_instance.ip++)
 #define READ_CONSTANT() (clox_vm_instance.chunk->constants.values[READ_BYTE()])
+#define READ_STRING() CLOX_AS_STRING(READ_CONSTANT())
 #define BINARY_OP(value_type, op) \
     do { \
         if ((!CLOX_IS_NUMBER(clox_stack_peek(0)) || (!CLOX_IS_NUMBER(clox_stack_peek(1))))) { \
@@ -139,8 +142,6 @@ static clox_interpret_result run()
                 break;
             }
             case CLOX_OP_RETURN: {
-                clox_print_value(clox_stack_pop());
-                printf("\n");
                 return CLOX_INTERPRET_OK;
             }
             case CLOX_OP_NIL: clox_stack_push(CLOX_NIL_VAL); break;
@@ -156,11 +157,53 @@ static clox_interpret_result run()
                 break;
             case CLOX_OP_GREATER: BINARY_OP(CLOX_BOOL_VAL, >); break;
             case CLOX_OP_LESS: BINARY_OP(CLOX_BOOL_VAL, >); break;
+            case CLOX_OP_PRINT: {
+                clox_print_value(clox_stack_pop());
+                printf("\n");
+                break;
+            }
+            case CLOX_OP_POP: clox_stack_pop(); break;
+            case CLOX_OP_DEFINE_GLOBAL: {
+                clox_obj_string* name = READ_STRING();
+                clox_table_set(&clox_vm_instance.globals, name, clox_stack_peek(0));
+                clox_stack_pop();
+                break;
+            }
+            case CLOX_OP_GET_GLOBAL: {
+                clox_obj_string* name = READ_STRING();
+                clox_value value;
+                if (!clox_table_get(&clox_vm_instance.globals, name, &value)) {
+                    runtime_error("Undefined variable '%s'.", name->chars);
+                    return CLOX_INTERPRET_RUNTIME_ERROR;
+                }
+                clox_stack_push(value);
+                break;
+            }
+            case CLOX_OP_SET_GLOBAL: {
+                clox_obj_string* name = READ_STRING();
+                if (clox_table_set(&clox_vm_instance.globals, name, clox_stack_peek(0))) {
+                    clox_table_delete(&clox_vm_instance.globals, name);
+                    runtime_error("Undefined variable '%s'.", name->chars);
+                    return CLOX_INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
+            case CLOX_OP_GET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                clox_stack_push(clox_vm_instance.stack[slot]);
+                break;
+            }
+            case CLOX_OP_SET_LOCAL: {
+                uint8_t slot = READ_BYTE();
+                clox_vm_instance.stack[slot] = clox_stack_peek(0);
+                break;
+            }
         }
     }
 
 #undef READ_BYTE
 #undef READ_CONSTANT
+#undef READ_STRING
 #undef BINARY_OP
 }
 
