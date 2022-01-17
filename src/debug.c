@@ -7,6 +7,7 @@
 static int simple_instruction(const char* name, int offset);
 static int constant_instruction(const char* name, clox_chunk* chunk, int offset);
 static int byte_instruction(const char* name, clox_chunk* chunk, int offset);
+static int jump_instruction(const char* name, int sign, clox_chunk* chunk, int offset);
 
 void clox_disassemble_chunk(clox_chunk *chunk, const char *name)
 {
@@ -71,6 +72,12 @@ int clox_disassemble_instruction(clox_chunk *chunk, int offset)
         return byte_instruction("opGetLocal", chunk, offset);
     case CLOX_OP_SET_LOCAL:
         return byte_instruction("opSetLocal", chunk, offset);
+    case CLOX_OP_JUMP_IF_FALSE:
+        return jump_instruction("opJumpIfFalse", 1, chunk, offset);
+    case CLOX_OP_JUMP:
+        return jump_instruction("opJump", 1, chunk, offset);
+    case CLOX_OP_LOOP:
+        return jump_instruction("opLoop", -1, chunk, offset);
     default:
         printf("Unknown opcode %d\n", instruction);
         return offset + 1;
@@ -99,4 +106,10 @@ static int byte_instruction(const char* name, clox_chunk* chunk, int offset)
     return offset + 2;
 }
 
-
+static int jump_instruction(const char* name, int sign, clox_chunk* chunk, int offset)
+{
+    uint16_t jump = (uint16_t)(chunk->code[offset + 1] << 8);
+    jump |= chunk->code[offset + 2];
+    printf("%-16s %4d -> %d\n", name, offset, offset + 3 + sign * jump);
+    return offset + 3;
+}

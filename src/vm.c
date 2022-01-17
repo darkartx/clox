@@ -74,6 +74,8 @@ static clox_interpret_result run()
 {
 #define READ_BYTE() (*clox_vm_instance.ip++)
 #define READ_CONSTANT() (clox_vm_instance.chunk->constants.values[READ_BYTE()])
+#define READ_SHORT() \
+    (clox_vm_instance.ip += 2, (uint16_t)((clox_vm_instance.ip[-2] << 8) | clox_vm_instance.ip[-1]))
 #define READ_STRING() CLOX_AS_STRING(READ_CONSTANT())
 #define BINARY_OP(value_type, op) \
     do { \
@@ -156,7 +158,7 @@ static clox_interpret_result run()
                 clox_stack_push(CLOX_BOOL_VAL(clox_value_equal(a, b)));
                 break;
             case CLOX_OP_GREATER: BINARY_OP(CLOX_BOOL_VAL, >); break;
-            case CLOX_OP_LESS: BINARY_OP(CLOX_BOOL_VAL, >); break;
+            case CLOX_OP_LESS: BINARY_OP(CLOX_BOOL_VAL, <); break;
             case CLOX_OP_PRINT: {
                 clox_print_value(clox_stack_pop());
                 printf("\n");
@@ -198,11 +200,27 @@ static clox_interpret_result run()
                 clox_vm_instance.stack[slot] = clox_stack_peek(0);
                 break;
             }
+            case CLOX_OP_JUMP_IF_FALSE: {
+                uint16_t offset = READ_SHORT();
+                if (is_falsey(clox_stack_peek(0))) clox_vm_instance.ip += offset;
+                break;
+            }
+            case CLOX_OP_JUMP: {
+                uint16_t offset = READ_SHORT();
+                clox_vm_instance.ip += offset;
+                break;
+            }
+            case CLOX_OP_LOOP: {
+                uint16_t offset = READ_SHORT();
+                clox_vm_instance.ip -= offset;
+                break;
+            }
         }
     }
 
 #undef READ_BYTE
 #undef READ_CONSTANT
+#undef READ_SHORT
 #undef READ_STRING
 #undef BINARY_OP
 }
@@ -228,7 +246,7 @@ static void runtime_error(const char *format, ...)
 
 static bool is_falsey(clox_value value)
 {
-    return CLOX_IS_NIL(value) || (CLOX_IS_BOOL(value) && CLOX_AS_BOOL(value));
+    return CLOX_IS_NIL(value) || (CLOX_IS_BOOL(value) && !CLOX_AS_BOOL(value));
 }
 
 static void concatenate()

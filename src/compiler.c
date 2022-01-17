@@ -57,10 +57,13 @@ static void number(bool can_assign);
 static void literal(bool can_assign);
 static void string(bool can_assign);
 static void variable(bool can_assign);
+static void and_(bool can_assign);
+static void or_(bool can_assign);
 static void advance();
 static bool match(clox_token_type type);
 static void declaration();
 static void end_compiler();
+static void statement();
 
 parser_state parser;
 compiler* current = NULL;
@@ -89,7 +92,7 @@ parse_rule rules[] = {
     [CLOX_TOKEN_IDENTIFIER]     = { variable, NULL, PREC_NONE },
     [CLOX_TOKEN_STRING]         = { string, NULL, PREC_NONE },
     [CLOX_TOKEN_NUMBER]         = { number, NULL, PREC_NONE },
-    [CLOX_TOKEN_AND]            = { NULL, NULL, PREC_NONE },
+    [CLOX_TOKEN_AND]            = { NULL, and_, PREC_AND },
     [CLOX_TOKEN_CLASS]          = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_ELSE]           = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_FALSE]          = { literal, NULL, PREC_NONE },
@@ -97,7 +100,7 @@ parse_rule rules[] = {
     [CLOX_TOKEN_FUN]            = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_IF]             = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_NIL]            = { literal, NULL, PREC_NONE },
-    [CLOX_TOKEN_OR]             = { NULL, NULL, PREC_NONE },
+    [CLOX_TOKEN_OR]             = { NULL, or_, PREC_OR },
     [CLOX_TOKEN_PRINT]          = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_RETURN]         = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_SUPER]          = { NULL, NULL, PREC_NONE },
@@ -168,6 +171,11 @@ static clox_chunk* current_chunk()
 static parse_rule *get_rule(clox_token_type type)
 {
     return &rules[type];
+}
+
+static void mark_initialized()
+{
+    current->locals[current->local_count - 1].depth = current->scope_depth;
 }
 
 static void error_at_current(const char *message)
@@ -344,13 +352,15 @@ static void print_statement()
     emit_byte(CLOX_OP_PRINT);
 }
 
-static void block()
+static void emit_loop(int loop_start)
 {
-    while (!check(CLOX_TOKEN_RIGHT_BRACE) && !check(CLOX_TOKEN_EOF)) {
-        declaration();
-    }
+    emit_byte(CLOX_OP_LOOP);
 
-    consume(CLOX_TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+    int offset = current_chunk()->count - loop_start + 2;
+    if (offset > UINT16_MAX) error("Loop body too large.");
+
+    emit_byte((offset >> 8) & 0xff);
+    emit_byte(offset & 0xff);
 }
 
 static void begin_scope()
@@ -368,6 +378,18 @@ static void end_scope()
     }
 }
 
+static void patch_jump(int offset)
+{
+    int jump = current_chunk()->count - offset - 2;
+
+    if (jump > UINT16_MAX) {
+        error("Too match code to jump over.");
+    }
+
+    current_chunk()->code[offset] = (jump >> 8) & 0xff;
+    current_chunk()->code[offset + 1] = jump & 0xff;
+}
+
 static void expression_statement()
 {
     expression();
@@ -375,24 +397,21 @@ static void expression_statement()
     emit_byte(CLOX_OP_POP);
 }
 
-static void statement()
-{
-    if (match(CLOX_TOKEN_PRINT)) {
-        print_statement();
-    } else if (match(CLOX_TOKEN_LEFT_BRACE)) {
-        begin_scope();
-        block();
-        end_scope();
-    } else {
-        expression_statement();
-    }
-}
-
 static uint8_t identifier_constant(clox_token* name)
 {
     return make_constant(
         CLOX_OBJ_VAL(clox_copy_string(name->start, name->length))
     );
+}
+
+static void define_variable(uint8_t global)
+{
+    if (current->scope_depth > 0) {
+        mark_initialized();
+        return;
+    }
+
+    emit_bytes(CLOX_OP_DEFINE_GLOBAL, global);
 }
 
 static void add_local(clox_token name)
@@ -443,21 +462,6 @@ static uint8_t parse_variable(const char* error_message)
     return identifier_constant(&parser.previous);
 }
 
-static void mark_initialized()
-{
-    current->locals[current->local_count - 1].depth = current->scope_depth;
-}
-
-static void define_variable(uint8_t global)
-{
-    if (current->scope_depth > 0) {
-        mark_initialized();
-        return;
-    }
-
-    emit_bytes(CLOX_OP_DEFINE_GLOBAL, global);
-}
-
 static void var_declaration()
 {
     uint8_t global = parse_variable("Expect variable name.");
@@ -471,6 +475,126 @@ static void var_declaration()
     consume(CLOX_TOKEN_SEMICOLON, "Expect ';' after variable declaration.");
 
     define_variable(global);
+}
+
+static void for_statement()
+{
+    begin_scope();
+
+    consume(CLOX_TOKEN_LEFT_PAREN, "Expect '(' after 'for'.");
+    if (match(CLOX_TOKEN_SEMICOLON)) {
+    } else if (match(CLOX_TOKEN_VAR)) {
+        var_declaration();
+    } else {
+        expression_statement();
+    }
+
+    int loop_start = current_chunk()->count;
+    int exit_jump = -1;
+    if (!match(CLOX_TOKEN_SEMICOLON)) {
+        expression();
+        consume(CLOX_TOKEN_SEMICOLON, "Expect ';' after loop condition.");
+
+        exit_jump = emit_jump(CLOX_OP_JUMP_IF_FALSE);
+        emit_byte(CLOX_OP_POP);
+    }
+
+    if (!match(CLOX_TOKEN_RIGHT_PAREN)) {
+        int body_jump = emit_jump(CLOX_OP_JUMP);
+        int increment_start = current_chunk()->count;
+
+        expression();
+        emit_byte(CLOX_OP_POP);
+        consume(CLOX_TOKEN_RIGHT_PAREN, "Expect ')' after for clauses.");
+
+        emit_loop(loop_start);
+        loop_start = increment_start;
+        patch_jump(body_jump);
+    }
+
+    statement();
+    emit_loop(loop_start);
+
+    if (exit_jump != -1) {
+        patch_jump(exit_jump);
+        emit_byte(CLOX_OP_POP);
+    }
+
+    end_scope();
+}
+
+static int emit_jump(uint8_t instruction)
+{
+    emit_byte(instruction);
+    emit_byte(0xff);
+    emit_byte(0xff);
+
+    return current_chunk()->count - 2;
+}
+
+static void if_statement()
+{
+    consume(CLOX_TOKEN_LEFT_PAREN, "Expect '(' after 'if'.");
+    expression();
+    consume(CLOX_TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
+
+    int then_jump = emit_jump(CLOX_OP_JUMP_IF_FALSE);
+    emit_byte(CLOX_OP_POP);
+    statement();
+
+    int else_jump = emit_jump(CLOX_OP_JUMP);
+
+    patch_jump(then_jump);
+    emit_byte(CLOX_OP_POP);
+
+    if (match(CLOX_TOKEN_ELSE)) statement();
+
+    patch_jump(else_jump);
+}
+
+static void while_statement()
+{
+    int loop_start = current_chunk()->count;
+    consume(CLOX_TOKEN_LEFT_PAREN, "Expect '(' after 'while'.");
+    expression();
+    consume(CLOX_TOKEN_RIGHT_PAREN, "Expect ')' after condition.");
+
+    int exit_jump = emit_jump(CLOX_OP_JUMP_IF_FALSE);
+    emit_byte(CLOX_OP_POP);
+
+    statement();
+    emit_loop(loop_start);
+
+    patch_jump(exit_jump);
+    emit_byte(CLOX_OP_POP);
+}
+
+static void block()
+{
+    while (!check(CLOX_TOKEN_RIGHT_BRACE) && !check(CLOX_TOKEN_EOF)) {
+        declaration();
+    }
+
+    consume(CLOX_TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+}
+
+static void statement()
+{
+    if (match(CLOX_TOKEN_PRINT)) {
+        print_statement();
+    } else if (match(CLOX_TOKEN_FOR)) {
+        for_statement();
+    } else if (match(CLOX_TOKEN_IF)) {
+        if_statement();
+    } else if (match(CLOX_TOKEN_WHILE)) {
+        while_statement();
+    } else if (match(CLOX_TOKEN_LEFT_BRACE)) {
+        begin_scope();
+        block();
+        end_scope();
+    } else {
+        expression_statement();
+    }
 }
 
 static void synchronize()
@@ -555,6 +679,29 @@ static void named_variable(clox_token name, bool can_assign)
 static void variable(bool can_assign)
 {
     named_variable(parser.previous, can_assign);
+}
+
+static void and_(bool can_assign)
+{
+    int end_jump = emit_jump(CLOX_OP_JUMP_IF_FALSE);
+
+    emit_byte(CLOX_OP_POP);
+    parse_precedence(PREC_AND);
+
+    patch_jump(end_jump);
+}
+
+static void or_(bool can_assign)
+{
+    int else_jump = emit_jump(CLOX_OP_JUMP_IF_FALSE);
+    int end_jump = emit_jump(CLOX_OP_JUMP);
+
+    patch_jump(else_jump);
+    emit_byte(CLOX_OP_POP);
+
+    parse_precedence(PREC_OR);
+    patch_jump(end_jump);
+
 }
 
 

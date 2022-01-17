@@ -25,7 +25,10 @@ typedef enum {
     CLOX_OP_GET_GLOBAL,
     CLOX_OP_SET_GLOBAL,
     CLOX_OP_GET_LOCAL,
-    CLOX_OP_SET_LOCAL
+    CLOX_OP_SET_LOCAL,
+    CLOX_OP_JUMP_IF_FALSE,
+    CLOX_OP_JUMP,
+    CLOX_OP_LOOP
 } clox_op_code;
 
 typedef struct {
