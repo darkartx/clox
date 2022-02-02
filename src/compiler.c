@@ -43,13 +43,21 @@ typedef struct {
     int depth;
 } local;
 
-typedef struct {
+typedef enum {
+    FUNCTION_TYPE_FUNCTION,
+    FUNCTION_TYPE_SCRIPT
+} function_type;
+
+typedef struct compiler {
+    struct compiler* enclosing;
     local locals[CLOX_UINT8_COUNT];
     int local_count;
     int scope_depth;
+    clox_obj_function* function;
+    function_type function_type;
 } compiler;
 
-static void init_compiler(compiler* compiler);
+static void init_compiler(compiler* compiler, function_type type);
 static void grouping(bool can_assign);
 static void unary(bool can_assign);
 static void binary(bool can_assign);
@@ -59,18 +67,18 @@ static void string(bool can_assign);
 static void variable(bool can_assign);
 static void and_(bool can_assign);
 static void or_(bool can_assign);
+static void call(bool can_assign);
 static void advance();
 static bool match(clox_token_type type);
 static void declaration();
-static void end_compiler();
+static clox_obj_function* end_compiler();
 static void statement();
 
 parser_state parser;
 compiler* current = NULL;
-clox_chunk *compiling_chunk;
 
 parse_rule rules[] = {
-    [CLOX_TOKEN_LEFT_PAREN]     = { grouping, NULL, PREC_NONE },
+    [CLOX_TOKEN_LEFT_PAREN]     = { grouping, call, PREC_NONE },
     [CLOX_TOKEN_RIGHT_PAREN]    = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_LEFT_BRACE]     = { NULL, NULL, PREC_NONE },
     [CLOX_TOKEN_RIGHT_BRACE]    = { NULL, NULL, PREC_NONE },
@@ -112,12 +120,11 @@ parse_rule rules[] = {
     [CLOX_TOKEN_EOF]            = { NULL, NULL, PREC_NONE }
 };
 
-bool clox_compile(const char *source, clox_chunk *chunk)
+clox_obj_function* clox_compile(const char *source)
 {
     clox_init_scanner(source);
     compiler compiler;
-    init_compiler(&compiler);
-    compiling_chunk = chunk;
+    init_compiler(&compiler, FUNCTION_TYPE_SCRIPT);
 
     parser.had_error = false;
     parser.panic_mode = false;
@@ -128,15 +135,27 @@ bool clox_compile(const char *source, clox_chunk *chunk)
         declaration();
     }
 
-    end_compiler();
-    return !parser.had_error;
+    clox_obj_function* function = end_compiler();
+    return parser.had_error ? NULL : function;
 }
 
-static void init_compiler(compiler* compiler)
+static void init_compiler(compiler* compiler, function_type type)
 {
+    compiler->enclosing = current;
+    compiler->function_type = type;
     compiler->local_count = 0;
     compiler->scope_depth = 0;
+    compiler->function = clox_new_function();
     current = compiler;
+
+    if (type != FUNCTION_TYPE_SCRIPT) {
+        current->function->name = clox_copy_string(parser.previous.start, parser.previous.length);
+    }
+
+    local* local = &current->locals[current->local_count++];
+    local->depth = 0;
+    local->name.start = "";
+    local->name.length = 0;
 }
 
 static bool check(clox_token_type type) 
@@ -165,7 +184,7 @@ static void error_at(clox_token *token, const char *message)
 
 static clox_chunk* current_chunk()
 {
-    return compiling_chunk;
+    return &current->function->chunk;
 }
 
 static parse_rule *get_rule(clox_token_type type)
@@ -175,6 +194,7 @@ static parse_rule *get_rule(clox_token_type type)
 
 static void mark_initialized()
 {
+    if (current->scope_depth == 0) return;
     current->locals[current->local_count - 1].depth = current->scope_depth;
 }
 
@@ -223,18 +243,26 @@ static void emit_bytes(uint8_t byte1, uint8_t byte2)
 
 static void emit_return()
 {
+    emit_byte(CLOX_OP_NIL);
     emit_byte(CLOX_OP_RETURN);
 }
 
-static void end_compiler()
+static clox_obj_function* end_compiler()
 {
     emit_return();
+    clox_obj_function* function = current->function;
 
 #ifdef CLOX_DEBUG_PRINT_CODE
     if (!parser.had_error) {
-        clox_disassemble_chunk(current_chunk(), "code");
+        clox_disassemble_chunk(
+            current_chunk(), 
+            function->name != NULL ? function->name->chars : "<script>"
+        );
     }
 #endif
+
+    current = current->enclosing;
+    return function;
 }
 
 static void parse_precedence(precedence_type precedence)
@@ -578,6 +606,21 @@ static void block()
     consume(CLOX_TOKEN_RIGHT_BRACE, "Expect '}' after block.");
 }
 
+static void return_statement()
+{
+    if (current->function_type == FUNCTION_TYPE_SCRIPT) {
+        error("Can't return from top-level code.");
+    }
+
+    if (match(CLOX_TOKEN_SEMICOLON)) {
+        emit_return();
+    } else {
+        expression();
+        consume(CLOX_TOKEN_SEMICOLON, "Expect ';' after return value.");
+        emit_byte(CLOX_OP_RETURN);
+    }
+}
+
 static void statement()
 {
     if (match(CLOX_TOKEN_PRINT)) {
@@ -586,6 +629,8 @@ static void statement()
         for_statement();
     } else if (match(CLOX_TOKEN_IF)) {
         if_statement();
+    } else if (match(CLOX_TOKEN_RETURN)) {
+        return_statement();
     } else if (match(CLOX_TOKEN_WHILE)) {
         while_statement();
     } else if (match(CLOX_TOKEN_LEFT_BRACE)) {
@@ -621,9 +666,48 @@ static void synchronize()
     }
 }
 
+static void function(function_type type)
+{
+    compiler compiler;
+    init_compiler(&compiler, type);
+    begin_scope();
+
+    consume(CLOX_TOKEN_LEFT_PAREN, "Expect '(' after function name.");
+
+    if (!check(CLOX_TOKEN_RIGHT_PAREN)) {
+        do {
+            current->function->arity++;
+            if (current->function->arity > 255) {
+                error_at_current("Can't have more than 255 parameters.");
+            }
+            uint8_t constant = parse_variable("Expect parameter name.");
+            define_variable(constant);
+        } while (match(CLOX_TOKEN_COMMA));
+    }
+
+    consume(CLOX_TOKEN_RIGHT_PAREN, "Expect ')' after parameters.");
+    consume(CLOX_TOKEN_LEFT_BRACE, "Expect '{' before function body.");
+
+
+    block();
+
+    clox_obj_function* function = end_compiler();
+    emit_bytes(CLOX_OP_CONSTANT, make_constant(CLOX_OBJ_VAL(function)));
+}
+
+static void fun_declaration()
+{
+    uint8_t global = parse_variable("Expect function name.");
+    mark_initialized();
+    function(FUNCTION_TYPE_FUNCTION);
+    define_variable(global);
+}
+
 static void declaration()
 {
-    if (match(CLOX_TOKEN_VAR)) {
+    if (match(CLOX_TOKEN_FUN)) {
+        fun_declaration();
+    } else if (match(CLOX_TOKEN_VAR)) {
         var_declaration();
     } else {
         statement();
@@ -701,7 +785,29 @@ static void or_(bool can_assign)
 
     parse_precedence(PREC_OR);
     patch_jump(end_jump);
+}
 
+static uint8_t argument_list()
+{
+    uint8_t arg_count = 0;
+    if (!check(CLOX_TOKEN_RIGHT_PAREN)) {
+        do {
+            expression();
+            if (arg_count == 255) {
+                error("Can't have more than 255 arguments.");
+            }
+            arg_count++;
+        } while (match(CLOX_TOKEN_COMMA));
+    }
+
+    consume(CLOX_TOKEN_RIGHT_PAREN, "Expect ')' after arguments.");
+    return arg_count;
+}
+
+static void call(bool can_assign)
+{
+    uint8_t arg_count = argument_list();
+    emit_bytes(CLOX_OP_CALL, arg_count);
 }
 
 

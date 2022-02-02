@@ -2,7 +2,8 @@
 #define __CLOX_COMPILER_H__
 
 #include "chunk.h"
+#include "object.h"
 
-bool clox_compile(const char *source, clox_chunk *chunk);
+clox_obj_function* clox_compile(const char *source);
 
 #endif // __CLOX_COMPILER_H__

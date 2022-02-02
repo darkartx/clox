@@ -36,5 +36,15 @@ static void free_object(clox_obj* object)
             FREE(clox_obj_string, object);
             break;
         }
+        case CLOX_OBJ_FUNCTION: {
+            clox_obj_function* function = (clox_obj_function*)object;
+            clox_free_chunk(&function->chunk);
+            FREE(clox_obj_function, object);
+            break;
+        }
+        case CLOX_OBJ_NATIVE_FUNCTION: {
+            FREE(clox_obj_native_function, object);
+            break;
+        }
     }
 }

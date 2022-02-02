@@ -13,6 +13,25 @@
 static clox_obj_string* allocate_string(char* chars, int length, uint32_t hash);
 static clox_obj* allocate_object(size_t size, clox_obj_type type);
 static uint32_t hash_string(const char* chars, int length);
+static void print_function(clox_obj_function* function);
+
+clox_obj_native_function* clox_new_native_function(clox_native_fn function)
+{
+    clox_obj_native_function* native_fn = ALLOCATE_OBJ(clox_obj_native_function, CLOX_OBJ_NATIVE_FUNCTION);
+    native_fn->function = function;
+    return native_fn;
+}
+
+clox_obj_function* clox_new_function()
+{
+    clox_obj_function* function = ALLOCATE_OBJ(clox_obj_function, CLOX_OBJ_FUNCTION);
+    function->arity = 0;
+    function->name = NULL;
+
+    clox_init_chunk(&function->chunk);
+
+    return function;
+}
 
 clox_obj_string* clox_copy_string(const char* chars, int length)
 {
@@ -43,9 +62,18 @@ clox_obj_string* clox_take_string(char* chars, int length)
 void clox_print_object(clox_value value)
 {
     switch (CLOX_OBJ_TYPE(value)) {
-        case CLOX_OBJ_STRING:
+        case CLOX_OBJ_STRING: {
             printf("%s", CLOX_AS_CSTRING(value));
             break;
+        }
+        case CLOX_OBJ_FUNCTION: {
+            print_function(CLOX_AS_FUNCTION(value));
+            break;
+        }
+        case CLOX_OBJ_NATIVE_FUNCTION: {
+            printf("<native fn>");
+            break;
+        }
     }
 }
 
@@ -79,4 +107,13 @@ static uint32_t hash_string(const char* chars, int length)
     }
 
     return hash;
+}
+
+static void print_function(clox_obj_function* function)
+{
+    if (function->name == NULL) {
+        printf("<script>");
+        return;
+    }
+    printf("<fn %s>", function->name->chars);
 }

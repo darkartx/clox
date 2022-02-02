@@ -6,11 +6,18 @@
 #include "object.h"
 #include "table.h"
 
-#define CLOX_STACK_MAX 256
+#define CLOX_FRAME_MAX 64
+#define CLOX_STACK_MAX (CLOX_FRAME_MAX * CLOX_UINT8_COUNT)
 
 typedef struct {
-    clox_chunk* chunk;
+    clox_obj_function* function;
     uint8_t* ip;
+    clox_value* slots;
+} clox_call_frame;
+
+typedef struct {
+    clox_call_frame frames[CLOX_FRAME_MAX];
+    int frame_count;
     clox_value stack[CLOX_STACK_MAX];
     clox_value* stack_top;
     clox_table strings;

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <time.h>
 
 #include "clox/common.h"
 #include "clox/vm.h"
@@ -17,6 +18,10 @@ static clox_interpret_result run();
 static void runtime_error(const char *format, ...);
 static bool is_falsey(clox_value value);
 static void concatenate();
+static bool call_value(clox_value callee, int args_count);
+static bool call(clox_obj_function* function, int arg_count);
+static clox_value clock_native(int arg_count, clox_value* args);
+static void define_native_function(const char* name, clox_native_fn function);
 
 void clox_init_vm()
 {
@@ -25,6 +30,8 @@ void clox_init_vm()
 
     clox_init_table(&clox_vm_instance.strings);
     clox_init_table(&clox_vm_instance.globals);
+
+    define_native_function("clock", clock_native);
 }
 
 void clox_free_vm()
@@ -36,21 +43,13 @@ void clox_free_vm()
 
 clox_interpret_result clox_interpret(const char *source)
 {
-    clox_chunk chunk;
-    clox_init_chunk(&chunk);
+    clox_obj_function* function = clox_compile(source);
+    if (function == NULL) return CLOX_INTERPRET_COMPILE_ERROR;
 
-    if (!clox_compile(source, &chunk)) {
-        clox_free_chunk(&chunk);
-        return CLOX_INTERPRET_COMPILE_ERROR;
-    }
-
-    clox_vm_instance.chunk = &chunk;
-    clox_vm_instance.ip = clox_vm_instance.chunk->code;
-
-    clox_interpret_result result = run();
-
-    clox_free_chunk(&chunk);
-    return result;
+    clox_stack_push(CLOX_OBJ_VAL(function));
+    call(function, 0);
+    
+    return run();
 }
 
 void clox_stack_push(clox_value value)
@@ -72,10 +71,12 @@ clox_value clox_stack_peek(int distance)
 
 static clox_interpret_result run()
 {
-#define READ_BYTE() (*clox_vm_instance.ip++)
-#define READ_CONSTANT() (clox_vm_instance.chunk->constants.values[READ_BYTE()])
+    clox_call_frame* frame = &clox_vm_instance.frames[clox_vm_instance.frame_count - 1];
+
+#define READ_BYTE() (*frame->ip++)
+#define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
 #define READ_SHORT() \
-    (clox_vm_instance.ip += 2, (uint16_t)((clox_vm_instance.ip[-2] << 8) | clox_vm_instance.ip[-1]))
+    (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
 #define READ_STRING() CLOX_AS_STRING(READ_CONSTANT())
 #define BINARY_OP(value_type, op) \
     do { \
@@ -97,7 +98,7 @@ static clox_interpret_result run()
             printf(" ]");
         }
         printf("\n");
-        clox_disassemble_instruction(clox_vm_instance.chunk, (int)(clox_vm_instance.ip - clox_vm_instance.chunk->code));
+        clox_disassemble_instruction(&frame->function->chunk, (int)(frame->ip - frame->function->chunk.code));
 #endif
 
         uint8_t instruction;
@@ -144,7 +145,18 @@ static clox_interpret_result run()
                 break;
             }
             case CLOX_OP_RETURN: {
-                return CLOX_INTERPRET_OK;
+                clox_value result = clox_stack_pop();
+                clox_vm_instance.frame_count--;
+
+                if (clox_vm_instance.frame_count == 0) {
+                    clox_stack_pop();
+                    return CLOX_INTERPRET_OK;
+                }
+
+                clox_vm_instance.stack_top = frame->slots;
+                clox_stack_push(result);
+                frame = &clox_vm_instance.frames[clox_vm_instance.frame_count - 1];
+                break;
             }
             case CLOX_OP_NIL: clox_stack_push(CLOX_NIL_VAL); break;
             case CLOX_OP_TRUE: clox_stack_push(CLOX_BOOL_VAL(true)); break;
@@ -192,27 +204,35 @@ static clox_interpret_result run()
             }
             case CLOX_OP_GET_LOCAL: {
                 uint8_t slot = READ_BYTE();
-                clox_stack_push(clox_vm_instance.stack[slot]);
+                clox_stack_push(frame->slots[slot]);
                 break;
             }
             case CLOX_OP_SET_LOCAL: {
                 uint8_t slot = READ_BYTE();
-                clox_vm_instance.stack[slot] = clox_stack_peek(0);
+                frame->slots[slot] = clox_stack_peek(0);
                 break;
             }
             case CLOX_OP_JUMP_IF_FALSE: {
                 uint16_t offset = READ_SHORT();
-                if (is_falsey(clox_stack_peek(0))) clox_vm_instance.ip += offset;
+                if (is_falsey(clox_stack_peek(0))) frame->ip += offset;
                 break;
             }
             case CLOX_OP_JUMP: {
                 uint16_t offset = READ_SHORT();
-                clox_vm_instance.ip += offset;
+                frame->ip += offset;
                 break;
             }
             case CLOX_OP_LOOP: {
                 uint16_t offset = READ_SHORT();
-                clox_vm_instance.ip -= offset;
+                frame->ip -= offset;
+                break;
+            }
+            case CLOX_OP_CALL: {
+                int arg_count = READ_BYTE();
+                if (!call_value(clox_stack_peek(arg_count), arg_count)) {
+                    return CLOX_INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &clox_vm_instance.frames[clox_vm_instance.frame_count - 1];
                 break;
             }
         }
@@ -228,6 +248,7 @@ static clox_interpret_result run()
 static void reset_stack()
 {
     clox_vm_instance.stack_top = clox_vm_instance.stack;
+    clox_vm_instance.frame_count = 0;
 }
 
 static void runtime_error(const char *format, ...)
@@ -238,10 +259,28 @@ static void runtime_error(const char *format, ...)
     va_end(args);
     fputs("\n", stderr);
 
-    size_t instruction = clox_vm_instance.ip - clox_vm_instance.chunk->code - 1;
-    int line = clox_vm_instance.chunk->lines[instruction];
-    fprintf(stderr, "[line %d] in script\n", line);
+    for (int i = clox_vm_instance.frame_count - 1; i >= 0; i--) {
+        clox_call_frame* frame = &clox_vm_instance.frames[i];
+        clox_obj_function* function = frame->function;
+        size_t instruction = frame->ip - function->chunk.code - 1;
+        fprintf(stderr, "[line %d] in ", function->chunk.lines[instruction]);
+        if (function->name == NULL) {
+            fprintf(stderr, "script\n");
+        } else {
+            fprintf(stderr, "%s()\n", function->name->chars);
+        }
+    }
+
     reset_stack();
+}
+
+static void define_native_function(const char* name, clox_native_fn function)
+{
+    clox_stack_push(CLOX_OBJ_VAL(clox_copy_string(name, (int)strlen(name))));
+    clox_stack_push(CLOX_OBJ_VAL(clox_new_native_function(function)));
+    clox_table_set(&clox_vm_instance.globals, CLOX_AS_STRING(clox_vm_instance.stack[0]), clox_vm_instance.stack[1]);
+    clox_stack_pop();
+    clox_stack_pop();
 }
 
 static bool is_falsey(clox_value value)
@@ -262,4 +301,50 @@ static void concatenate()
 
     clox_obj_string* result = clox_take_string(chars, length);
     clox_stack_push(CLOX_OBJ_VAL(result));
+}
+
+static bool call(clox_obj_function* function, int arg_count)
+{
+    if (arg_count != function->arity) {
+        runtime_error("Expect %d arguments but got %d.", function->arity, arg_count);
+        return false;
+    }
+
+    if (clox_vm_instance.frame_count == CLOX_FRAME_MAX) {
+        runtime_error("Stack overflow.");
+        return false;
+    }
+
+    clox_call_frame* frame = &clox_vm_instance.frames[clox_vm_instance.frame_count++];
+    frame->function = function;
+    frame->ip = function->chunk.code;
+    frame->slots = clox_vm_instance.stack_top - arg_count - 1;
+    return true;
+}
+
+static bool call_value(clox_value callee, int args_count)
+{
+    if (CLOX_IS_OBJ(callee)) {
+        switch (CLOX_OBJ_TYPE(callee)) {
+            case CLOX_OBJ_FUNCTION:
+                return call(CLOX_AS_FUNCTION(callee), args_count);
+            case CLOX_OBJ_NATIVE_FUNCTION: {
+                clox_native_fn native = CLOX_AS_NATIVE_FUNCTION(callee);
+                clox_value result = native(args_count, clox_vm_instance.stack_top - args_count);
+                clox_vm_instance.stack_top -= args_count + 1;
+                clox_stack_push(result);
+                return true;
+            }
+            default:
+                break;
+        }
+    }
+
+    runtime_error("Can only call functions and classes.");
+    return false;
+}
+
+static clox_value clock_native(int arg_count, clox_value* args)
+{
+    return CLOX_NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
 }

@@ -78,6 +78,8 @@ int clox_disassemble_instruction(clox_chunk *chunk, int offset)
         return jump_instruction("opJump", 1, chunk, offset);
     case CLOX_OP_LOOP:
         return jump_instruction("opLoop", -1, chunk, offset);
+    case CLOX_OP_CALL:
+        return byte_instruction("opCall", chunk, offset);
     default:
         printf("Unknown opcode %d\n", instruction);
         return offset + 1;
